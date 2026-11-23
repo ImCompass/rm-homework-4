@@ -1,0 +1,10 @@
+# build output
+build/
+cmake-build-*/
+mx.scratch
+
+# IDE / local settings
+.idea/
+.settings/
+.vscode/
+.clangd
