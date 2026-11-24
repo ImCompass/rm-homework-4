@@ -75,16 +75,11 @@ uint16_t AngleToCCR(float angle)
 }
 
 void Servo_SetAngle(float angle)
-{ 
-    uint16_t ccr = AngleToCCR(angle);   // 几个特殊情况用AngleToCCR函数换算
+{
+    uint16_t ccr = AngleToCCR(angle);
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, ccr);
 }
 
-int _write(int fd, char *ptr, int len)
-{
-    HAL_UART_Transmit(&huart1, (uint8_t *)ptr, len, 100);
-    return len;
-}
 /* USER CODE END 0 */
 
 /**
@@ -129,6 +124,7 @@ int main(void)
   float target = 0.0f;  // 目标角度
   uint16_t ccr = AngleToCCR(target);
   char line[20];
+  char message[50];
   const float seq[5] = {0.0f, 45.0f, 90.0f, 135.0f, 180.0f};
   /* USER CODE END 2 */
 
@@ -148,16 +144,17 @@ int main(void)
       sprintf(line, "Target:%03ddeg", (int)target);
       OLED_PrintString(0, 0, line, &font16x16, OLED_COLOR_NORMAL);
 
-      sprintf(line, "CCR   :%04d", ccr);
+      sprintf(line, "CCR   :%4d", ccr);
       OLED_PrintString(0, 18, line, &font16x16, OLED_COLOR_NORMAL);
 
       sprintf(line, "Pulse :%d.%03dms", ccr / 1000, ccr % 1000);
       OLED_PrintString(0, 36, line, &font16x16, OLED_COLOR_NORMAL);
       OLED_ShowFrame();
       // 串口信息输出
-      printf("Target=%3d  CCR=%4d  Pulse=%d.%03dms\r\n",
-      (int)target, ccr, ccr / 1000, ccr % 1000);
-      
+      sprintf(message, "Target=%03ddeg  CCR=%4d  Pulse=%d.%03dms\r\n",
+              (int)target, ccr, ccr / 1000, ccr % 1000);
+      HAL_UART_Transmit(&huart1, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+
       HAL_Delay(1000);
     }
 

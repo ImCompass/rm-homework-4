@@ -8,3 +8,6 @@ mx.scratch
 .settings/
 .vscode/
 .clangd
+
+# demo video (submit to QQ group, not in repo)
+*.mp4
