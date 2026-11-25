@@ -80,6 +80,41 @@ void Servo_SetAngle(float angle)
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, ccr);
 }
 
+int8_t Key_Scan(void)
+{
+    static uint8_t add_last = 1;   /* 加键上次稳定电平：1 = 松开（上拉） */
+    static uint8_t sub_last = 1;   /* 减键上次稳定电平：1 = 松开（上拉） */
+
+    uint8_t add_now = HAL_GPIO_ReadPin(KEY_ADD_GPIO_Port, KEY_ADD_Pin);
+    uint8_t sub_now = HAL_GPIO_ReadPin(KEY_SUB_GPIO_Port, KEY_SUB_Pin);
+
+    /* 加键：检测到变化 → 延时 20ms 消抖 → 再确认一次 */
+    if (add_now != add_last)
+    {
+        HAL_Delay(20);
+        if (HAL_GPIO_ReadPin(KEY_ADD_GPIO_Port, KEY_ADD_Pin) == add_now)
+        {
+            add_last = add_now;                    /* 记录新的稳定电平 */
+            if (add_now == GPIO_PIN_RESET)         /* 松开→按下：生效一次 */
+                return +1;
+        }
+    }
+
+    // 减键
+    if (sub_now != sub_last)
+    {
+        HAL_Delay(20);
+        if (HAL_GPIO_ReadPin(KEY_SUB_GPIO_Port, KEY_SUB_Pin) == sub_now)
+        {
+            sub_last = sub_now;
+            if (sub_now == GPIO_PIN_RESET)
+                return -1;
+        }
+    }
+
+    return 0;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -121,24 +156,55 @@ int main(void)
   OLED_Init(); 
   OLED_NewFrame();
 
-  float target = 0.0f;  // 目标角度
-  uint16_t ccr = AngleToCCR(target);
-  char line[20];
-  char message[50];
   const float seq[5] = {0.0f, 45.0f, 90.0f, 135.0f, 180.0f};
+  uint8_t  seq_index     = 1;   // 下一个自动序列点（上电已在 0°，所以从 45° 开始）
+  float    target        = 0.0f;  // 目标角度
+  uint16_t ccr           = AngleToCCR(target);
+  char     line[20];
+  char     message[50];
+  uint32_t last_seq_tick = HAL_GetTick();  // 上一次自动步进的时间
+  uint32_t manual_until  = 0;              // 手动操作后暂停自动序列的截止时间
+  uint8_t  update        = 1;   // 1 = 需要刷新显示（上电先显示一次）
+
+  Servo_SetAngle(target);       // 上电先转到 0°
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    for (int i = 0; i < 5; i++) 
+    uint32_t now = HAL_GetTick();
+
+    int8_t step = Key_Scan();     // 0 = 无按键，+1 = 加键，-1 = 减键
+
+    if (step != 0)
     {
-      // 角度设定 角度换算 舵机输出
-      target = seq[i];                      // 目标角度
-      ccr = AngleToCCR(target);   // 确保main里面的ccr和函数里的是一样的
-      Servo_SetAngle(target);              // 舵机输出
-      
+      target += 15.0f * step;             // 每次 ±15°
+      if (target < 0.0f)   target = 0.0f; // 限制在 0°~180°
+      if (target > 180.0f) target = 180.0f;
+
+      ccr = AngleToCCR(target);
+      Servo_SetAngle(target);             // 角度一变立刻输出，不等按键松开
+      manual_until = now + 3000;          // 手动操作后 3 秒内不跑自动序列
+      update = 1;
+    }
+
+    // 自动序列：每满 1000ms 走一步（手动操作后 3 秒内暂停）
+    if (now >= manual_until && now - last_seq_tick >= 1000)
+    {
+      last_seq_tick = now;
+      target = seq[seq_index];
+      seq_index = (seq_index + 1) % 5;
+
+      ccr = AngleToCCR(target);
+      Servo_SetAngle(target);
+      update = 1;
+    }
+
+    if (update)
+    {
+      update = 0;
+
       // OLED信息显示
       OLED_NewFrame();
       sprintf(line, "Target:%03ddeg", (int)target);
@@ -150,12 +216,11 @@ int main(void)
       sprintf(line, "Pulse :%d.%03dms", ccr / 1000, ccr % 1000);
       OLED_PrintString(0, 36, line, &font16x16, OLED_COLOR_NORMAL);
       OLED_ShowFrame();
+
       // 串口信息输出
       sprintf(message, "Target=%03ddeg  CCR=%4d  Pulse=%d.%03dms\r\n",
               (int)target, ccr, ccr / 1000, ccr % 1000);
       HAL_UART_Transmit(&huart1, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
-
-      HAL_Delay(1000);
     }
 
     /* USER CODE END WHILE */
